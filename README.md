@@ -74,9 +74,22 @@ Feature-Based-Approach/
 │   └── final_selected.csv                      # CSV file with audio IDs and metadata
 └── Processed_data_sample_raw_voice/            # Audio files directory
     └── raw_wav/                                # Raw WAV audio files
-        ├── 0/                                  # Class 0 audio files (subdirectories)
-        └── 1/                                  # Class 1 audio files (subdirectories)
+        ├── 0/                                  # Arbitrary folder name (does NOT indicate label)
+        │   ├── 5394000/
+        │   │   └── audio_audio.m4a-[hash].wav
+        │   └── 5395000/
+        │       └── audio_audio.m4a-[hash].wav
+        └── 1/                                  # Arbitrary folder name (does NOT indicate label)
+            ├── 5389001/
+            │   └── audio_audio.m4a-[hash].wav
+            └── 5392001/
+                └── audio_audio.m4a-[hash].wav
 ```
+
+> **Note:**
+> The folder names `0/` and `1/` under `Processed_data_sample_raw_voice/raw_wav/` are arbitrary and do **not** represent PD or HC labels. **Do not use these folder names for classification.**
+> 
+> The true label (PD or HC) for each audio file is provided in the `final_selected.csv` file, specifically in the `cohort` column. Always use the CSV for label information.
 
 ## 🚀 Installation & Setup
 
