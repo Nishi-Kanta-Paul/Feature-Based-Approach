@@ -1,0 +1,4 @@
+pandas
+praat-parselmouth
+librosa
+soundfile 

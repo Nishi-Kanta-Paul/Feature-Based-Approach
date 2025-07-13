@@ -1,0 +1,155 @@
+import os
+import pandas as pd
+from utils import find_all_audio_paths, extract_voice_breaks
+
+CSV_PATH = "all_audios_mapped_id_for_label/final_selected.csv"
+AUDIO_BASE = "Processed_data_sample_raw_voice/raw_wav"
+OUTPUT_PATH = "features/voice_breaks_features.csv"
+LOG_PATH = "features/voice_breaks_extraction_errors.log"
+
+# Try reading as tab-separated first
+df = pd.read_csv(CSV_PATH, sep='\t')
+df.columns = df.columns.str.strip()
+
+# If only one column, try comma-separated
+if len(df.columns) == 1:
+    print("Detected only one column. Trying comma as delimiter...")
+    df = pd.read_csv(CSV_PATH, sep=',')
+    df.columns = df.columns.str.strip()
+
+if 'audio_audio.m4a' not in df.columns:
+    print('Column names:', df.columns.tolist())
+    print("ERROR: 'audio_audio.m4a' column not found!")
+    exit(1)
+
+# Extract audio IDs (the column contains just the ID numbers)
+audio_ids = df['audio_audio.m4a'].astype(str).tolist()
+print(f"Found {len(audio_ids)} audio IDs to process")
+
+# Find audio paths
+audio_paths = find_all_audio_paths(AUDIO_BASE, audio_ids)
+print(f"Found {len(audio_paths)} audio files")
+
+# Initialize results
+results = []
+success_count = 0
+error_count = 0
+
+# Open error log
+with open(LOG_PATH, 'w') as error_log:
+    error_log.write("Voice Breaks Extraction Errors Log\n")
+    error_log.write("=" * 50 + "\n\n")
+
+    # Process each audio file
+    for audio_id in audio_ids:
+        print(f"\nProcessing audio ID: {audio_id}")
+
+        if audio_id not in audio_paths:
+            error_msg = f"Audio file not found for ID: {audio_id}"
+            print(f"❌ {error_msg}")
+            error_log.write(f"{audio_id}: {error_msg}\n")
+            error_count += 1
+            continue
+
+        audio_path = audio_paths[audio_id]
+
+        try:
+            # Extract voice breaks features
+            voice_breaks_features = extract_voice_breaks(audio_path)
+
+            # Check if extraction was successful
+            if voice_breaks_features['voiced_percentage'] is not None:
+                result = {
+                    'audio_id': audio_id,
+                    'audio_path': audio_path,
+                    **voice_breaks_features
+                }
+                results.append(result)
+                success_count += 1
+                print(
+                    f"✅ Successfully extracted voice breaks features for {audio_id}")
+                print(
+                    f"   Voiced: {voice_breaks_features['voiced_percentage']:.1f}%")
+                print(
+                    f"   Unvoiced: {voice_breaks_features['unvoiced_percentage']:.1f}%")
+                print(
+                    f"   Voice breaks: {voice_breaks_features['voice_breaks_count']}")
+                print(
+                    f"   Voiced segments: {voice_breaks_features['voiced_segments_count']}")
+            else:
+                error_msg = f"Voice breaks extraction failed - no valid pitch data found"
+                print(f"❌ {error_msg}")
+                error_log.write(f"{audio_id}: {error_msg}\n")
+                error_count += 1
+
+        except Exception as e:
+            error_msg = f"Error extracting voice breaks: {str(e)}"
+            print(f"❌ {error_msg}")
+            error_log.write(f"{audio_id}: {error_msg}\n")
+            error_count += 1
+
+# Create results DataFrame
+if results:
+    results_df = pd.DataFrame(results)
+
+    # Add original data
+    final_df = df.copy()
+    # Convert audio_id to string for proper merging
+    final_df['audio_audio.m4a'] = final_df['audio_audio.m4a'].astype(str)
+    results_df['audio_id'] = results_df['audio_id'].astype(str)
+    final_df = final_df.merge(
+        results_df, left_on='audio_audio.m4a', right_on='audio_id', how='left')
+
+    # Save results
+    final_df.to_csv(OUTPUT_PATH, index=False)
+    print(f"\n✅ Results saved to {OUTPUT_PATH}")
+
+    # Print summary statistics
+    print(f"\n📊 Voice Breaks Extraction Summary:")
+    print(f"   Total files processed: {len(audio_ids)}")
+    print(f"   Files found: {len(audio_paths)}")
+    print(f"   Successful extractions: {success_count}")
+    print(f"   Failed extractions: {error_count}")
+    print(f"   Success rate: {(success_count/len(audio_ids)*100):.1f}%")
+
+    # Print sample results
+    print(f"\n📈 Sample Voice Breaks Statistics:")
+    successful_results = results_df[results_df['voiced_percentage'].notna()]
+    if not successful_results.empty:
+        print(
+            f"   Average Voiced Percentage: {successful_results['voiced_percentage'].mean():.1f}%")
+        print(
+            f"   Average Unvoiced Percentage: {successful_results['unvoiced_percentage'].mean():.1f}%")
+        print(
+            f"   Average Voice Breaks: {successful_results['voice_breaks_count'].mean():.1f}")
+        print(
+            f"   Average Voiced Segments: {successful_results['voiced_segments_count'].mean():.1f}")
+        print(
+            f"   Average Unvoiced Segments: {successful_results['unvoiced_segments_count'].mean():.1f}")
+
+        print(f"\n🎯 Top 5 Most Voiced (Highest voiced %):")
+        top_voiced = successful_results.nlargest(5, 'voiced_percentage')[
+            ['audio_id', 'voiced_percentage', 'voice_breaks_count']]
+        for _, row in top_voiced.iterrows():
+            print(
+                f"   {row['audio_id']}: {row['voiced_percentage']:.1f}% voiced, {row['voice_breaks_count']} breaks")
+
+        print(f"\n🎯 Top 5 Least Voiced (Lowest voiced %):")
+        bottom_voiced = successful_results.nsmallest(5, 'voiced_percentage')[
+            ['audio_id', 'voiced_percentage', 'voice_breaks_count']]
+        for _, row in bottom_voiced.iterrows():
+            print(
+                f"   {row['audio_id']}: {row['voiced_percentage']:.1f}% voiced, {row['voice_breaks_count']} breaks")
+
+        print(f"\n🎯 Top 5 Most Breaks:")
+        top_breaks = successful_results.nlargest(5, 'voice_breaks_count')[
+            ['audio_id', 'voice_breaks_count', 'voiced_percentage']]
+        for _, row in top_breaks.iterrows():
+            print(
+                f"   {row['audio_id']}: {row['voice_breaks_count']} breaks, {row['voiced_percentage']:.1f}% voiced")
+else:
+    print("❌ No voice breaks features were successfully extracted!")
+    error_count = len(audio_ids)
+
+print(f"\n📝 Error log saved to {LOG_PATH}")
+print(f"🔍 Check the error log for detailed failure reasons")
